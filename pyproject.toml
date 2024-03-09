@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wolumeicon"
+description = "Volume icon for the system tray"
+version = "0.1"
+authors = [{name = "Dino Duratović", email = "dinomol@mail.com"}]
+dependencies = ["pyqt6", "dbus-python"]
+readme = "README.md"
+license = {file = "LICENSE"}
+
+[project.scripts]
+wolumeicon = "wolumeicon:run"
+
+[tool.setuptools]
+packages = ["wolumeicon"]
