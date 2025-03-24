@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-#
-# Copyright (C) 2024 Dino Duratović <dinomol at mail dot com>
+# Copyright (C) 2024-2025 Dino Duratović <dinomol at mail dot com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -170,25 +169,25 @@ class Pipewire_Interface(QtCore.QObject):
         # assume volume channels are always linked
         return channel_volumes[0], muted
 
-    def set_volume(self, volume):
-        """Set the volume for our device.
-
-        Relies on pw-cli until a PipeWire library becomes available.
-        Doesn't mute audio as it's only meant to change the
-        volume via input from the slider. Once global hotkeys work on Wayland,
-        muting should also be handled - either in here or as a separate method.
-        """
-        # double curly braces are needed for escaping
-        json_prop = "{{index: {}, device: {}, props: {{channelVolumes: [{}, {}]}}}}"
-        command = (
-            "pw-cli",
-            "s",
-            # TODO: change to self.device_name
-            self.device_id,
-            "Route",
-            json_prop.format(self.route_index, self.route_device, volume, volume)
-            )
-        subprocess.run(command, stdout=subprocess.DEVNULL)
+#    def set_volume(self, volume):
+#        """Set the volume for our device.
+#
+#        Relies on pw-cli until a PipeWire library becomes available.
+#        Doesn't mute audio as it's only meant to change the
+#        volume via input from the slider. Once global hotkeys work on Wayland,
+#        muting should also be handled - either in here or as a separate method.
+#        """
+#        # double curly braces are needed for escaping
+#        json_prop = "{{index: {}, device: {}, props: {{channelVolumes: [{}, {}]}}}}"
+#        command = (
+#            "pw-cli",
+#            "s",
+#            # TODO: change to self.device_name
+#            self.device_id,
+#            "Route",
+#            json_prop.format(self.route_index, self.route_device, volume, volume)
+#            )
+#        subprocess.run(command, stdout=subprocess.DEVNULL)
 
     def choose_icon(self):
         """Gets the appropriate icon for the volume level.
@@ -226,7 +225,7 @@ class Wolumeicon:
 
         self.create_tray_icon()
         self.create_context_menu()
-        self.create_slider()
+#        self.create_slider()
         self.notifications = Notification()
 
         self.pipewire_interface.changed.connect(self.update_tray_icon)
@@ -248,23 +247,23 @@ class Wolumeicon:
 
     def tray_icon_clicked(self, activation_reason):
         """Handle clicking the tray icon. See create_context_menu for right-click."""
-        # left click
-        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
-            tray_icon_geometry = self.tray_icon.geometry()
-            x_pos = tray_icon_geometry.x()
-            y_pos = tray_icon_geometry.y() + tray_icon_geometry.height()
-            # adjust the slider's value before displaying it
-            self.update_slider_from_volume(self.pipewire_interface.volume)
-            self.slider_menu.exec(QtCore.QPoint(x_pos, y_pos))
+#        # left click
+#        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
+#            tray_icon_geometry = self.tray_icon.geometry()
+#            x_pos = tray_icon_geometry.x()
+#            y_pos = tray_icon_geometry.y() + tray_icon_geometry.height()
+#            # adjust the slider's value before displaying it
+#            self.update_slider_from_volume(self.pipewire_interface.volume)
+#            self.slider_menu.exec(QtCore.QPoint(x_pos, y_pos))
 
         # middle click
-        elif activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
+        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
             self.start_mixer()
 
     def create_context_menu(self):
         """Shows the context menu on right-click and display a quit button."""
         self.context_menu = QtWidgets.QMenu()
-        self.context_menu.setStyleSheet("QMenu {padding: 2px 0}")
+        #self.context_menu.setStyleSheet("QMenu {padding: 2px 0}")
         self.quit_button = QtGui.QAction("Quit")
         self.quit_button.triggered.connect(self.quit_button_pressed)
         self.context_menu.addAction(self.quit_button)
@@ -275,26 +274,26 @@ class Wolumeicon:
         self.pipewire_interface.stop_monitor()
         self.application.quit()
 
-    def create_slider(self):
-        """The volume change slider."""
-        self.slider = QtWidgets.QSlider()
-        self.slider.setMaximum(100)
-        self.slider.valueChanged.connect(self.update_volume_from_slider)
+#    def create_slider(self):
+#        """The volume change slider."""
+#        self.slider = QtWidgets.QSlider()
+#        self.slider.setMaximum(100)
+#        self.slider.valueChanged.connect(self.update_volume_from_slider)
+#
+#        self.slider_menu = QtWidgets.QMenu()
+#        self.slider_action = QtWidgets.QWidgetAction(self.slider_menu)
+#        self.slider_action.setDefaultWidget(self.slider)
+#        self.slider_menu.addAction(self.slider_action)
 
-        self.slider_menu = QtWidgets.QMenu()
-        self.slider_action = QtWidgets.QWidgetAction(self.slider_menu)
-        self.slider_action.setDefaultWidget(self.slider)
-        self.slider_menu.addAction(self.slider_action)
+#    def update_slider_from_volume(self, volume):
+#        """Adjusts the slider to the current volume."""
+#        value = linear_to_percent(volume)
+#        self.slider.setValue(value)
 
-    def update_slider_from_volume(self, volume):
-        """Adjusts the slider to the current volume."""
-        value = linear_to_percent(volume)
-        self.slider.setValue(value)
-
-    def update_volume_from_slider(self, slider_value):
-        """Updates volumes from the slider's current value."""
-        volume = percent_to_linear(slider_value)
-        self.pipewire_interface.set_volume(volume)
+#    def update_volume_from_slider(self, slider_value):
+#        """Updates volumes from the slider's current value."""
+#        volume = percent_to_linear(slider_value)
+#        self.pipewire_interface.set_volume(volume)
 
     def volume_notification(self, volume, muted, icon_name):
         """Display the desktop notification.
