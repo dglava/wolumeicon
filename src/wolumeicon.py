@@ -311,7 +311,7 @@ class Wolumeicon:
         if shutil.which(self.mixer_application):
             subprocess.Popen(self.mixer_application.split(), start_new_session=True)
         else:
-            message = ("Error:\n  Mixer application '{}' not found. Make sure it's "
+            message = ("Mixer application '{}' not found. Make sure it's "
                        "executable and found in your $PATH")
             print(message.format(self.mixer_application))
 
