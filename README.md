@@ -7,8 +7,8 @@ didn't work with Wayland. It also works on PipeWire natively, which
 was another reason for creating this.
 
 It is a rather primitive implementation, mostly due to its PipeWire
-monitoring. Since there isn't a PipeWire Python library as of writing
-this (and I lack the skill to create a proper solution), it's monitoring
+monitoring. Since, as the time of writing this, there isn't a PipeWire Python library
+and I lack the skill to create a proper solution, it's monitoring
 for changes by parsing the output of `pw-mon`.
 
 ## How to use
