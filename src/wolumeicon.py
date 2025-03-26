@@ -296,15 +296,9 @@ class Wolumeicon:
 #        self.pipewire_interface.set_volume(volume)
 
     def volume_notification(self, volume, muted, icon_name):
-        """Display the desktop notification.
-
-        Shows the notifications only when adjusting the volume 'externally',
-        i.e. via hotkeys and not when adjusting the volume via the slider.
-        """
-        # TODO: don't trigger on any slider actions (for example on stepping via clicking)
-        if not self.slider.isSliderDown():
-            percent_volume = linear_to_percent(volume)
-            self.notifications.show_notification(percent_volume, icon_name)
+        """Display the desktop notification."""
+        percent_volume = linear_to_percent(volume)
+        self.notifications.show_notification(percent_volume, icon_name)
 
     def start_mixer(self):
         """Runs the program provided via the --mixer option."""
