@@ -87,8 +87,7 @@ class Pipewire_Interface(QtCore.QObject):
         for item in json_data:
             for metadata in item["metadata"]:
                 if metadata["key"] == "default.audio.sink":
-                    sink = metadata["value"]["name"]
-        return sink
+                    return metadata["value"]["name"]
 
     def get_device_id(self):
         """Get the ID of our device used by default sink."""
