@@ -150,7 +150,7 @@ class Pipewire_Interface(QtCore.QObject):
         pw_dump = ["pw-dump", "-Nm", self.device_name]
         buffer = ""
         process = subprocess.Popen(pw_dump, stdout=subprocess.PIPE, text=True)
-        while True:
+        while self.running:
             line = process.stdout.readline()
             buffer += line
             # the JSON has ended
@@ -179,7 +179,6 @@ class Pipewire_Interface(QtCore.QObject):
 class Wolumeicon:
     """Displays a tray icon which provides useful functions.
 
-    Left clicking shows a slider which adjusts volume.
     Middle clicking starts an optional mixer application.
     Right clicking displays a quit button.
     """
