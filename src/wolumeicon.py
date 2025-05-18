@@ -61,6 +61,7 @@ class Pipewire_Interface(QtCore.QObject):
 
     def __init__(self):
         super().__init__()
+        self.wait_init()
         self.sink = self.get_sink()
         self.device_id = self.get_device_id()
         self.device_name = self.get_device_name()
