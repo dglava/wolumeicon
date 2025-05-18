@@ -25,16 +25,10 @@ import sys
 import argparse
 import shutil
 
-def get_cli_output(command):
-    """Returns a str containing the output of a CLI program."""
-    proc = subprocess.run(command.split(), capture_output=True, text=True)
-    return proc.stdout
-
-def get_json(command):
-    """Return a dictionary with JSON data from a program (mostly pw-dump)."""
-    output = get_cli_output(command)
-    data = json.loads(output)
-    return data
+def cli_output(command):
+    """Returns a string containing the output of a CLI program."""
+    process = subprocess.run(command.split(), capture_output=True, text=True)
+    return process.stdout
 
 def cube_root(number):
     return number ** (1/3)
@@ -63,20 +57,13 @@ def get_options():
     return args
 
 class Pipewire_Interface(QtCore.QObject):
-    """PipeWire device info, event monitoring and volume getting and setting."""
-    # emitted when our device changes (volume, muted, icon name)
     changed = QtCore.pyqtSignal(float, bool, str)
 
     def __init__(self):
-        """Gets default sink, ID and route data and current volume/mute settings."""
         super().__init__()
-        self.wait_init()
-        self.default_sink = self.get_default_sink()
+        self.sink = self.get_sink()
         self.device_id = self.get_device_id()
         self.device_name = self.get_device_name()
-        self.route_index, self.route_device, self.route_order = self.get_route_data()
-        self.volume, self.muted = self.get_volume_and_muted()
-        self.icon_name = self.choose_icon()
         self.running = False
 
     def wait_init(self):
@@ -85,64 +72,95 @@ class Pipewire_Interface(QtCore.QObject):
         Hacky solution. I am not sure if this is a sufficient proof that
         PipeWire has initialized everything, but it seems to work for now.
         """
+        #TODO: perhaps find a better way to make sure pipewire is initialized
         while True:
-            data = get_json("pw-dump Metadata")
-            for item in data:
+            data = cli_output("pw-dump Metadata")
+            json_data = json.loads(data)
+            for item in json_data:
                 if item["props"]["metadata.name"] == "default":
                     return
 
-    def get_default_sink(self):
+    def get_sink(self):
         """Get the default PipeWire sink."""
-        data = get_json("pw-dump Metadata")
-        for item in data:
+        data = cli_output("pw-dump Metadata")
+        json_data = json.loads(data)
+        for item in json_data:
             for metadata in item["metadata"]:
                 if metadata["key"] == "default.audio.sink":
-                    default_sink = metadata["value"]["name"]
-        return default_sink
+                    sink = metadata["value"]["name"]
+        return sink
 
     def get_device_id(self):
         """Get the ID of our device used by default sink."""
-        data = get_json("pw-dump {}".format(self.default_sink))
-        device_id = data[0]["info"]["props"]["device.id"]
-        return str(device_id)
+        data = cli_output("pw-dump {}".format(self.sink))
+        json_data = json.loads(data)
+        device_id = json_data[0]["info"]["props"]["device.id"]
+        return device_id
 
     def get_device_name(self):
         """Get the name of the device used by the default sink."""
-        data = get_json("pw-dump {}".format(self.device_id))
-        for item in data:
-            if item["id"] == int(self.device_id):
+        data = cli_output("pw-dump {}".format(self.device_id))
+        json_data = json.loads(data)
+        for item in json_data:
+            if item["id"] == self.device_id:
                 device_name = item["info"]["props"]["device.name"]
         return device_name
 
-    def get_route_data(self):
-        """Get info about the relevant Route for volume changing."""
-        data = get_json("pw-dump {}".format(self.device_name))
+    def get_volume_and_muted(self, data):
+        """Gets volume/muted information from our device.
+
+        data is a JSON object with pw-dump data for our device."""
+        #TODO: does filtering based just on "direction" work? what if
+        # there are multiple ones with "Output"?
         for route in data[0]["info"]["params"]["Route"]:
             if route["direction"] == "Output":
-                index = route["index"]
-                device = route["device"]
-                order = data[0]["info"]["params"]["Route"].index(route)
-                return index, device, order
+                # assume the channels are always linked, therefore [0]
+                volume = route["props"]["channelVolumes"][0]
+                muted = route["props"]["mute"]
+                return volume, muted
+
+    def choose_icon(self, volume, muted):
+        """Gets the appropriate icon for the volume level.
+
+        It's convenient to do it at this level, so it's available for
+        the tray icon, notification icon and elsewhere where needed.
+        """
+        if muted:
+            return "audio-volume-muted"
+        elif volume > 0.405224:
+            return "audio-volume-high"
+        elif volume > 0.013824:
+            return "audio-volume-medium"
+        elif volume > 0:
+            return "audio-volume-low"
+        else:
+            return "audio-volume-muted"
 
     def monitor(self):
         """Basic PipeWire event monitor.
 
-        It is very primitive as it reads the stdout of pw-mon. It does
-        some basic filtering, like reacting only to changes for our default
-        sink/device. It emits a PyQt signal, which is utilized by the GUI
-        part. Hopefully a PipeWire library for Python will be available
-        eventually, with a proper event monitor that can be utilized.
+        It is very primitive as it wait for pw-dump to react to events.
+        It assembles the JSON output by pw-dump line by line. Each block
+        starts with [ and ends with ]. Once a block is done, it reads it
+        and gets volume/muted/icon information from it.
+        It emits a PyQt signal, which is utilized by the GUI part.
+        Hopefully a PipeWire library for Python will be available eventually,
+        with a proper event monito that can be utilized.
         """
-        # TODO: switch to QProcess?
-        # TODO: watch for device_id changes, verify that it's not changed?
-        pw_mon = ['pw-mon', '-o', '-N']
-        process = subprocess.Popen(pw_mon, stdout=subprocess.PIPE, text=True)
-        while self.running:
-            if "changed" in process.stdout.readline():
-                if self.device_id in process.stdout.readline():
-                    self.volume, self.muted = self.get_volume_and_muted()
-                    self.icon_name = self.choose_icon()
-                    self.changed.emit(self.volume, self.muted, self.icon_name)
+        pw_dump = ["pw-dump", "-Nm", self.device_name]
+        buffer = ""
+        process = subprocess.Popen(pw_dump, stdout=subprocess.PIPE, text=True)
+        while True:
+            line = process.stdout.readline()
+            buffer += line
+            # the JSON has ended
+            if line.startswith("]"):
+                data = json.loads(buffer)
+                self.volume, self.muted = self.get_volume_and_muted(data)
+                self.icon = self.choose_icon(self.volume, self.muted)
+                self.changed.emit(self.volume, self.muted, self.icon)
+                # clears the buffer, start reading new JSON
+                buffer = ""
 
     def start_monitor(self):
         """Starts the PipeWire event monitor in a separate thread."""
@@ -157,54 +175,6 @@ class Pipewire_Interface(QtCore.QObject):
         """Stops the PipeWire event monitor thread."""
         self.running = False
         self.thread.exit()
-
-    def get_volume_and_muted(self):
-        """Gets volume/muted information from our device.
-
-        Relies on pw-dump until a PipeWire library becomes available.
-        """
-        data = get_json("pw-dump {}".format(self.device_name))
-        channel_volumes = data[0]["info"]["params"]["Route"][self.route_order]["props"]["channelVolumes"]
-        muted = data[0]["info"]["params"]["Route"][self.route_order]["props"]["mute"]
-        # assume volume channels are always linked
-        return channel_volumes[0], muted
-
-#    def set_volume(self, volume):
-#        """Set the volume for our device.
-#
-#        Relies on pw-cli until a PipeWire library becomes available.
-#        Doesn't mute audio as it's only meant to change the
-#        volume via input from the slider. Once global hotkeys work on Wayland,
-#        muting should also be handled - either in here or as a separate method.
-#        """
-#        # double curly braces are needed for escaping
-#        json_prop = "{{index: {}, device: {}, props: {{channelVolumes: [{}, {}]}}}}"
-#        command = (
-#            "pw-cli",
-#            "s",
-#            # TODO: change to self.device_name
-#            self.device_id,
-#            "Route",
-#            json_prop.format(self.route_index, self.route_device, volume, volume)
-#            )
-#        subprocess.run(command, stdout=subprocess.DEVNULL)
-
-    def choose_icon(self):
-        """Gets the appropriate icon for the volume level.
-
-        It's convenient to do it at this level, so it's available for
-        the tray icon, notification icon and elsewhere where needed.
-        """
-        if self.muted:
-            return "audio-volume-muted"
-        elif self.volume > 0.405224:
-            return "audio-volume-high"
-        elif self.volume > 0.013824:
-            return "audio-volume-medium"
-        elif self.volume > 0:
-            return "audio-volume-low"
-        else:
-            return "audio-volume-muted"
 
 class Wolumeicon:
     """Displays a tray icon which provides useful functions.
@@ -225,7 +195,6 @@ class Wolumeicon:
 
         self.create_tray_icon()
         self.create_context_menu()
-#        self.create_slider()
         self.notifications = Notification()
 
         self.pipewire_interface.changed.connect(self.update_tray_icon)
@@ -235,7 +204,7 @@ class Wolumeicon:
 
     def create_tray_icon(self):
         """Creates a tray icon and connects it to the tray_icon_clicked() method."""
-        icon = QtGui.QIcon.fromTheme(self.pipewire_interface.icon_name)
+        icon = QtGui.QIcon.fromTheme(self.pipewire_interface.icon)
         self.tray_icon = QtWidgets.QSystemTrayIcon(icon)
         self.tray_icon.activated.connect(self.tray_icon_clicked)
         self.tray_icon.show()
@@ -247,15 +216,6 @@ class Wolumeicon:
 
     def tray_icon_clicked(self, activation_reason):
         """Handle clicking the tray icon. See create_context_menu for right-click."""
-#        # left click
-#        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
-#            tray_icon_geometry = self.tray_icon.geometry()
-#            x_pos = tray_icon_geometry.x()
-#            y_pos = tray_icon_geometry.y() + tray_icon_geometry.height()
-#            # adjust the slider's value before displaying it
-#            self.update_slider_from_volume(self.pipewire_interface.volume)
-#            self.slider_menu.exec(QtCore.QPoint(x_pos, y_pos))
-
         # middle click
         if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
             self.start_mixer()
@@ -263,7 +223,6 @@ class Wolumeicon:
     def create_context_menu(self):
         """Shows the context menu on right-click and display a quit button."""
         self.context_menu = QtWidgets.QMenu()
-        #self.context_menu.setStyleSheet("QMenu {padding: 2px 0}")
         self.quit_button = QtGui.QAction("Quit")
         self.quit_button.triggered.connect(self.quit_button_pressed)
         self.context_menu.addAction(self.quit_button)
@@ -273,27 +232,6 @@ class Wolumeicon:
         """Stop the PipeWire monitor thread and exit the GUI."""
         self.pipewire_interface.stop_monitor()
         self.application.quit()
-
-#    def create_slider(self):
-#        """The volume change slider."""
-#        self.slider = QtWidgets.QSlider()
-#        self.slider.setMaximum(100)
-#        self.slider.valueChanged.connect(self.update_volume_from_slider)
-#
-#        self.slider_menu = QtWidgets.QMenu()
-#        self.slider_action = QtWidgets.QWidgetAction(self.slider_menu)
-#        self.slider_action.setDefaultWidget(self.slider)
-#        self.slider_menu.addAction(self.slider_action)
-
-#    def update_slider_from_volume(self, volume):
-#        """Adjusts the slider to the current volume."""
-#        value = linear_to_percent(volume)
-#        self.slider.setValue(value)
-
-#    def update_volume_from_slider(self, slider_value):
-#        """Updates volumes from the slider's current value."""
-#        volume = percent_to_linear(slider_value)
-#        self.pipewire_interface.set_volume(volume)
 
     def volume_notification(self, volume, muted, icon_name):
         """Display the desktop notification."""
