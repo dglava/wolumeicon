@@ -65,6 +65,8 @@ class Pipewire_Interface(QtCore.QObject):
         self.sink = self.get_sink()
         self.device_id = self.get_device_id()
         self.device_name = self.get_device_name()
+        volume, muted = self.get_initial_volume_and_muted()
+        self.icon = self.choose_icon(volume, muted)
         self.running = False
 
     def wait_init(self):
@@ -118,6 +120,23 @@ class Pipewire_Interface(QtCore.QObject):
                 volume = route["props"]["channelVolumes"][0]
                 muted = route["props"]["mute"]
                 return volume, muted
+        # if there is no route data in the update; see monitor()
+        return None
+
+    def get_initial_volume_and_muted(self):
+        """Gets the initial volume/muted information from the sink.
+
+        It is needed because of a change in Pipewire 1.6.7:
+        Emit a route param update when card properties change. Otherwise, jack port updates are not always reflected correctly.
+
+        It caused events in pw-dump with empty Route data.
+        """
+        data = cli_output("pw-dump {}".format(self.sink))
+        json_data = json.loads(data)
+        props = json_data[0]["info"]["params"]["Props"][0]
+        volume = props["channelVolumes"][0]
+        muted = props["mute"]
+        return volume, muted
 
     def choose_icon(self, volume, muted):
         """Gets the appropriate icon for the volume level.
@@ -156,7 +175,13 @@ class Pipewire_Interface(QtCore.QObject):
             # the JSON has ended
             if line.startswith("]"):
                 data = json.loads(buffer)
-                self.volume, self.muted = self.get_volume_and_muted(data)
+                #TODO: sometimes events have empty Route data,
+                # find a better way to handle None route data;
+                data_check = self.get_volume_and_muted(data)
+                if data_check is None:
+                    buffer = ""
+                    continue
+                self.volume, self.muted = data_check
                 self.icon = self.choose_icon(self.volume, self.muted)
                 self.changed.emit(self.volume, self.muted, self.icon)
                 # clears the buffer, start reading new JSON
