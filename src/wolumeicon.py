@@ -64,6 +64,9 @@ class PipewireInterface():
         self.core = Wp.Core.new(None, None, None)
         self.loop = GLib.MainLoop()
         self.plugins = {}
+        self.sink_id = None
+        self.volume = None
+        self.muted = None
 
         self.core.connect_after("connected", self.on_connected)
         self.core.connect()
@@ -110,7 +113,7 @@ class PipewireInterface():
             self.update_volume_and_muted()
 
     def on_metadata_change(self, *_):
-        pass
+        self.update_sink_id()
 
     def update_volume_and_muted(self):
         volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
