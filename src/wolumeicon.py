@@ -98,6 +98,7 @@ class PipewireInterface():
         self.pending_activation -= 1
         if self.pending_activation == 0:
             self.update_sink_id()
+            self.update_volume_and_muted()
             self.connect_signals()
 
     def update_sink_id(self):
@@ -114,6 +115,7 @@ class PipewireInterface():
 
     def on_metadata_change(self, *_):
         self.update_sink_id()
+        self.update_volume_and_muted()
 
     def update_volume_and_muted(self):
         volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
