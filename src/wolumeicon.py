@@ -52,7 +52,7 @@ if wp_version != required_wp_version:
 #    return args
 
 
-class Pipewire_Interface():
+class PipewireInterface():
     MODULES = [
         ("libwireplumber-module-default-nodes-api", "default-nodes-api"),
         ("libwireplumber-module-mixer-api", "mixer-api"),
@@ -69,33 +69,22 @@ class Pipewire_Interface():
         self.core.connect()
         self.loop.run()
 
-    def show_volume(self, *_):
-        # TODO: move sink_id getting to a method
-        sink_id = self.plugins["default-nodes-api"].emit("get-default-node", "Audio/Sink")
-        result = self.plugins["mixer-api"].emit("get-volume", sink_id)
-
-        data = result.unpack()
-        volume = data.get("volume", 0.0)
-        muted = data.get("mute", False)
-
-        print(volume, muted, sink_id)
-
     def on_connected(self, *_):
         self.load_modules()
 
     def load_modules(self):
-        self.pending = len(self.MODULES)
+        self.pending_loading = len(self.MODULES)
         for module, provides in self.MODULES:
             self.core.load_component(module, "module", None, provides, None, self.on_loaded)
 
     def on_loaded(self, core, result, *_):
         core.load_component_finish(result)
-        self.pending -= 1
-        if self.pending == 0:
+        self.pending_loading -= 1
+        if self.pending_loading == 0:
             self.activate_plugins()
 
     def activate_plugins(self):
-        self.pending = len(self.MODULES)
+        self.pending_activation = len(self.MODULES)
         for _module, name in self.MODULES:
             plugin = Wp.Plugin.find(self.core, name)
             self.plugins[name] = plugin
@@ -103,12 +92,32 @@ class Pipewire_Interface():
 
     def on_activated(self, plugin, result, *_):
         plugin.activate_finish(result)
-        self.pending -= 1
-        if self.pending == 0:
-            self.plugins["mixer-api"].set_property("scale", 1)
-            self.plugins["mixer-api"].connect("changed", self.show_volume)
+        self.pending_activation -= 1
+        if self.pending_activation == 0:
+            self.update_sink_id()
+            self.connect_signals()
 
-            self.plugins["default-nodes-api"].connect("changed", self.show_volume)
+    def update_sink_id(self):
+        self.sink_id = self.plugins["default-nodes-api"].emit("get-default-node", "Audio/Sink")
+
+    def connect_signals(self):
+        self.plugins["mixer-api"].set_property("scale", 1)
+        self.plugins["mixer-api"].connect("changed", self.on_volume_change)
+        self.plugins["default-nodes-api"].connect("changed", self.on_metadata_change)
+
+    def on_volume_change(self, plugin, node_id):
+        if node_id == self.sink_id:
+            self.update_volume_and_muted()
+
+    def on_metadata_change(self, *_):
+        pass
+
+    def update_volume_and_muted(self):
+        volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
+        unpacked_volume_data = volume_data.unpack()
+
+        self.volume = unpacked_volume_data["volume"]
+        self.muted = unpacked_volume_data["mute"]
 
 #class Wolumeicon:
 #    """Displays a tray icon which provides useful functions.
@@ -203,7 +212,7 @@ class Pipewire_Interface():
 def run():
     #options = get_options()
     #app = Wolumeicon(options.mixer)
-    Pipewire_Interface()
+    PipewireInterface()
 
 if __name__ == "__main__":
     run()
