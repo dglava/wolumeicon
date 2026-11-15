@@ -22,11 +22,22 @@ import dbus
 import subprocess
 import argparse
 import shutil
+import sys
 import gi
 
 gi.require_version("Wp", "0.5")
 from gi.repository import Wp
 from gi.repository import GLib
+
+# the current wireplumber master has a commit which renames and modifies
+# module-default-nodes-api, which will require some fixes
+required_wp_version = "0.5.19"
+wp_version = Wp.get_library_version()
+if wp_version != required_wp_version:
+    error_msg = "Wp version required for this is {}. Quitting...".format(
+        required_wp_version
+        )
+    sys.exit(error_msg)
 
 #def get_options():
 #    description_string = "Displays a volume tray icon"
