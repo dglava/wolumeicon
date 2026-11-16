@@ -62,14 +62,11 @@ class PipewireInterface():
         Wp.init(Wp.InitFlags.PIPEWIRE | Wp.InitFlags.SPA_TYPES)
 
         self.core = Wp.Core.new(None, None, None)
-        #self.loop = GLib.MainLoop()
         self.plugins = {}
         self.sink_id = None
         self.volume = None
         self.muted = None
         self.on_volume_changed_callback = on_volume_changed_callback
-
-        #self.loop.run()
 
     def start(self):
         self.core.connect_after("connected", self.on_connected)
