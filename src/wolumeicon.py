@@ -72,8 +72,8 @@ class PipewireInterface():
         #self.loop.run()
 
     def start(self):
-        self.core.connect()
         self.core.connect_after("connected", self.on_connected)
+        self.core.connect()
 
     def on_connected(self, *_):
         self.load_modules()
@@ -145,6 +145,8 @@ class Wolumeicon:
         self.pipewire = PipewireInterface(self.on_volume_changed)
         self.pipewire.start()
 
+        # placeholder icon name
+        self.icon_name = "audio-volume-high"
         self.create_tray_icon()
         self.create_context_menu()
 #        self.notifications = Notification()
@@ -153,16 +155,29 @@ class Wolumeicon:
 
     def create_tray_icon(self):
         """Creates a tray icon and connects it to the tray_icon_clicked() method."""
-        # TODO: replace temporary icon name edit-undo
-        icon = QtGui.QIcon.fromTheme("edit-undo")
+        icon = QtGui.QIcon.fromTheme(self.icon_name)
         self.tray_icon = QtWidgets.QSystemTrayIcon(icon)
         self.tray_icon.activated.connect(self.tray_icon_clicked)
         self.tray_icon.show()
 
-    def update_tray_icon(self, icon_name):
+    def update_tray_icon(self, volume, muted):
         """Updates the icon every time the changed() signal is emitted."""
+        icon_name = self.get_icon(volume, muted)
         icon = QtGui.QIcon.fromTheme(icon_name)
         self.tray_icon.setIcon(icon)
+
+    def get_icon(self, volume, muted):
+        """Gets the appropriate icon for the volume level."""
+        if muted:
+            return "audio-volume-muted"
+        elif volume > 0.74:
+            return "audio-volume-high"
+        elif volume > 0.34:
+            return "audio-volume-medium"
+        elif volume > 0:
+            return "audio-volume-low"
+        else:
+            return "audio-volume-muted"
 
     def tray_icon_clicked(self, activation_reason):
         """Handle clicking the tray icon. See create_context_menu for right-click."""
@@ -183,7 +198,7 @@ class Wolumeicon:
         self.application.quit()
 
     def on_volume_changed(self, volume, muted):
-        print(volume, muted)
+        self.update_tray_icon(volume, muted)
 
 #    def volume_notification(self, volume, muted, icon_name):
 #        """Display the desktop notification."""
