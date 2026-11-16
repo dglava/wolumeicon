@@ -115,7 +115,6 @@ class PipewireInterface():
     def on_mixer_api_changed(self, plugin, node_id):
         if node_id == self.sink_id:
             self.update_volume_and_muted()
-            self.on_volume_changed_callback(self.volume, self.muted)
 
     def on_default_nodes_api_changed(self, plugin):
         pass
@@ -128,6 +127,7 @@ class PipewireInterface():
 
         self.volume = unpacked_volume_data["volume"]
         self.muted = unpacked_volume_data["mute"]
+        self.on_volume_changed_callback(self.volume, self.muted)
 
 class Wolumeicon:
     """Displays a tray icon which provides useful functions.
@@ -142,12 +142,13 @@ class Wolumeicon:
         self.application = QtWidgets.QApplication([])
         self.mixer_application = mixer_application
 
+        self.pipewire = PipewireInterface(self.on_volume_changed)
+        self.pipewire.start()
+
         self.create_tray_icon()
         self.create_context_menu()
 #        self.notifications = Notification()
 
-        self.pipewire = PipewireInterface(self.on_volume_changed)
-        self.pipewire.start()
         self.application.exec()
 
     def create_tray_icon(self):
