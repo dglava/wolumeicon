@@ -39,17 +39,17 @@ if wp_version != required_wp_version:
         )
     sys.exit(error_msg)
 
-#def get_options():
-#    description_string = "Displays a volume tray icon"
-#    parser = argparse.ArgumentParser(description=description_string)
-#    parser.add_argument(
-#        "-m",
-#        "--mixer",
-#        default=None,
-#        help="Mixer application to show on middle click"
-#        )
-#    args = parser.parse_args()
-#    return args
+def get_options():
+    description_string = "Displays a volume tray icon"
+    parser = argparse.ArgumentParser(description=description_string)
+    parser.add_argument(
+        "-m",
+        "--mixer",
+        default=None,
+        help="Mixer application to show on middle click"
+        )
+    args = parser.parse_args()
+    return args
 
 
 class PipewireInterface():
@@ -62,18 +62,18 @@ class PipewireInterface():
         Wp.init(Wp.InitFlags.PIPEWIRE | Wp.InitFlags.SPA_TYPES)
 
         self.core = Wp.Core.new(None, None, None)
-        self.loop = GLib.MainLoop()
+        #self.loop = GLib.MainLoop()
         self.plugins = {}
         self.sink_id = None
         self.volume = None
         self.muted = None
         self.on_volume_changed_callback = on_volume_changed_callback
 
-        self.core.connect_after("connected", self.on_connected)
         #self.loop.run()
 
     def start(self):
         self.core.connect()
+        self.core.connect_after("connected", self.on_connected)
 
     def on_connected(self, *_):
         self.load_modules()
@@ -115,6 +115,7 @@ class PipewireInterface():
     def on_mixer_api_changed(self, plugin, node_id):
         if node_id == self.sink_id:
             self.update_volume_and_muted()
+            self.on_volume_changed_callback(self.volume, self.muted)
 
     def on_default_nodes_api_changed(self, plugin):
         pass
@@ -127,7 +128,6 @@ class PipewireInterface():
 
         self.volume = unpacked_volume_data["volume"]
         self.muted = unpacked_volume_data["mute"]
-        self.on_volume_changed_callback(self.volume, self.muted)
 
 class Wolumeicon:
     """Displays a tray icon which provides useful functions.
@@ -140,7 +140,7 @@ class Wolumeicon:
     def __init__(self, mixer_application):
         """Creates the PipeWire interface and sets up UI elements."""
         self.application = QtWidgets.QApplication([])
-#        self.mixer_application = mixer_application
+        self.mixer_application = mixer_application
 
         self.create_tray_icon()
         self.create_context_menu()
@@ -189,14 +189,14 @@ class Wolumeicon:
 #        percent_volume = linear_to_percent(volume)
 #        self.notifications.show_notification(percent_volume, icon_name)
 
-#    def start_mixer(self):
-#        """Runs the program provided via the --mixer option."""
-#        if shutil.which(self.mixer_application):
-#            subprocess.Popen(self.mixer_application.split(), start_new_session=True)
-#        else:
-#            message = ("Mixer application '{}' not found. Make sure it's "
-#                       "executable and found in your $PATH")
-#            print(message.format(self.mixer_application))
+    def start_mixer(self):
+        """Runs the program provided via the --mixer option."""
+        if shutil.which(self.mixer_application):
+            subprocess.Popen(self.mixer_application.split(), start_new_session=True)
+        else:
+            message = ("Mixer application '{}' not found. Make sure it's "
+                       "executable and found in your $PATH")
+            print(message.format(self.mixer_application))
 
 #class Notification:
 #    """Simple Freedesktop desktop notification implementation via dbus."""
@@ -225,8 +225,8 @@ class Wolumeicon:
 #            )
 
 def run():
-    #options = get_options()
-    app = Wolumeicon("test")
+    options = get_options()
+    app = Wolumeicon(options.mixer)
 
 if __name__ == "__main__":
     run()
