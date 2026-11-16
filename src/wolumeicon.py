@@ -146,7 +146,7 @@ class Wolumeicon:
         self.icon_name = "audio-volume-high"
         self.create_tray_icon()
         self.create_context_menu()
-#        self.notifications = Notification()
+        self.notifications = Notification()
 
         self.application.exec()
 
@@ -159,8 +159,8 @@ class Wolumeicon:
 
     def update_tray_icon(self, volume, muted):
         """Updates the icon every time the changed() signal is emitted."""
-        icon_name = self.get_icon(volume, muted)
-        icon = QtGui.QIcon.fromTheme(icon_name)
+        self.icon_name = self.get_icon(volume, muted)
+        icon = QtGui.QIcon.fromTheme(self.icon_name)
         self.tray_icon.setIcon(icon)
 
     def get_icon(self, volume, muted):
@@ -196,11 +196,7 @@ class Wolumeicon:
 
     def on_volume_changed(self, volume, muted):
         self.update_tray_icon(volume, muted)
-
-#    def volume_notification(self, volume, muted, icon_name):
-#        """Display the desktop notification."""
-#        percent_volume = linear_to_percent(volume)
-#        self.notifications.show_notification(percent_volume, icon_name)
+        self.notifications.show_notification(volume, self.icon_name)
 
     def start_mixer(self):
         """Runs the program provided via the --mixer option."""
@@ -211,31 +207,32 @@ class Wolumeicon:
                        "executable and found in your $PATH")
             print(message.format(self.mixer_application))
 
-#class Notification:
-#    """Simple Freedesktop desktop notification implementation via dbus."""
-#    def __init__(self):
-#        session_bus = dbus.SessionBus()
-#        notify_obj = session_bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
-#        self.notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
-#
-#        self.id = 0
-#        self.timeout = -1
-#        # hint used for the progress bar
-#        self.hints = {"value": 0}
-#
-#    def show_notification(self, volume, icon):
-#        """Displays a notification with a progress bar showing the volume level."""
-#        self.hints["value"] = volume
-#        self.id = self.notify_iface.Notify(
-#            Wolumeicon.application_name,
-#            self.id,
-#            icon,
-#            "",
-#            "",
-#            [],
-#            self.hints,
-#            self.timeout
-#            )
+class Notification:
+    """Simple Freedesktop desktop notification implementation via dbus."""
+    def __init__(self):
+        session_bus = dbus.SessionBus()
+        notify_obj = session_bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+        self.notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
+
+        self.id = 0
+        self.timeout = -1
+        # hint used for the progress bar
+        self.hints = {"value": 0}
+
+    def show_notification(self, volume, icon):
+        """Displays a notification with a progress bar showing the volume level."""
+        volume_percent = int(volume * 100)
+        self.hints["value"] = volume_percent
+        self.id = self.notify_iface.Notify(
+            Wolumeicon.application_name,
+            self.id,
+            icon,
+            "",
+            "",
+            [],
+            self.hints,
+            self.timeout
+            )
 
 def run():
     options = get_options()
