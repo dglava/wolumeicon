@@ -58,7 +58,7 @@ class PipewireInterface():
         ("libwireplumber-module-mixer-api", "mixer-api"),
     ]
 
-    def __init__(self):
+    def __init__(self, on_volume_changed_callback):
         Wp.init(Wp.InitFlags.PIPEWIRE | Wp.InitFlags.SPA_TYPES)
 
         self.core = Wp.Core.new(None, None, None)
@@ -67,10 +67,13 @@ class PipewireInterface():
         self.sink_id = None
         self.volume = None
         self.muted = None
+        self.on_volume_changed_callback = on_volume_changed_callback
 
         self.core.connect_after("connected", self.on_connected)
+        #self.loop.run()
+
+    def start(self):
         self.core.connect()
-        self.loop.run()
 
     def on_connected(self, *_):
         self.load_modules()
@@ -97,25 +100,26 @@ class PipewireInterface():
         plugin.activate_finish(result)
         self.pending_activation -= 1
         if self.pending_activation == 0:
+            self.connect_signals()
             self.update_sink_id()
             self.update_volume_and_muted()
-            self.connect_signals()
 
     def update_sink_id(self):
         self.sink_id = self.plugins["default-nodes-api"].emit("get-default-node", "Audio/Sink")
 
     def connect_signals(self):
         self.plugins["mixer-api"].set_property("scale", 1)
-        self.plugins["mixer-api"].connect("changed", self.on_volume_change)
-        self.plugins["default-nodes-api"].connect("changed", self.on_metadata_change)
+        self.plugins["mixer-api"].connect("changed", self.on_mixer_api_changed)
+        self.plugins["default-nodes-api"].connect("changed", self.on_default_nodes_api_changed)
 
-    def on_volume_change(self, plugin, node_id):
+    def on_mixer_api_changed(self, plugin, node_id):
         if node_id == self.sink_id:
             self.update_volume_and_muted()
 
-    def on_metadata_change(self, *_):
-        self.update_sink_id()
-        self.update_volume_and_muted()
+    def on_default_nodes_api_changed(self, plugin):
+        pass
+#        self.update_sink_id()
+#        self.update_volume_and_muted()
 
     def update_volume_and_muted(self):
         volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
@@ -123,62 +127,68 @@ class PipewireInterface():
 
         self.volume = unpacked_volume_data["volume"]
         self.muted = unpacked_volume_data["mute"]
+        self.on_volume_changed_callback(self.volume, self.muted)
 
-#class Wolumeicon:
-#    """Displays a tray icon which provides useful functions.
-#
-#    Middle clicking starts an optional mixer application.
-#    Right clicking displays a quit button.
-#    """
-#    application_name = "Wolumeicon"
-#
-#    def __init__(self, mixer_application):
-#        """Creates the PipeWire interface and sets up UI elements."""
-#        self.application = QtWidgets.QApplication([])
+class Wolumeicon:
+    """Displays a tray icon which provides useful functions.
+
+    Middle clicking starts an optional mixer application.
+    Right clicking displays a quit button.
+    """
+    application_name = "Wolumeicon"
+
+    def __init__(self, mixer_application):
+        """Creates the PipeWire interface and sets up UI elements."""
+        self.application = QtWidgets.QApplication([])
 #        self.mixer_application = mixer_application
-#
-#        self.create_tray_icon()
-#        self.create_context_menu()
+
+        self.create_tray_icon()
+        self.create_context_menu()
 #        self.notifications = Notification()
-#
-#        self.application.exec()
-#
-#    def create_tray_icon(self):
-#        """Creates a tray icon and connects it to the tray_icon_clicked() method."""
-#        # TODO: replace temporary icon name edit-undo
-#        icon = QtGui.QIcon.fromTheme("edit-undo")
-#        self.tray_icon = QtWidgets.QSystemTrayIcon(icon)
-#        self.tray_icon.activated.connect(self.tray_icon_clicked)
-#        self.tray_icon.show()
-#
-#    def update_tray_icon(self, icon_name):
-#        """Updates the icon every time the changed() signal is emitted."""
-#        icon = QtGui.QIcon.fromTheme(icon_name)
-#        self.tray_icon.setIcon(icon)
-#
-#    def tray_icon_clicked(self, activation_reason):
-#        """Handle clicking the tray icon. See create_context_menu for right-click."""
-#        # middle click
-#        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
-#            self.start_mixer()
-#
-#    def create_context_menu(self):
-#        """Shows the context menu on right-click and display a quit button."""
-#        self.context_menu = QtWidgets.QMenu()
-#        self.quit_button = QtGui.QAction("Quit")
-#        self.quit_button.triggered.connect(self.quit_button_pressed)
-#        self.context_menu.addAction(self.quit_button)
-#        self.tray_icon.setContextMenu(self.context_menu)
-#
-#    def quit_button_pressed(self):
-#        """Stop the PipeWire monitor thread and exit the GUI."""
-#        self.application.quit()
-#
+
+        self.pipewire = PipewireInterface(self.on_volume_changed)
+        self.pipewire.start()
+        self.application.exec()
+
+    def create_tray_icon(self):
+        """Creates a tray icon and connects it to the tray_icon_clicked() method."""
+        # TODO: replace temporary icon name edit-undo
+        icon = QtGui.QIcon.fromTheme("edit-undo")
+        self.tray_icon = QtWidgets.QSystemTrayIcon(icon)
+        self.tray_icon.activated.connect(self.tray_icon_clicked)
+        self.tray_icon.show()
+
+    def update_tray_icon(self, icon_name):
+        """Updates the icon every time the changed() signal is emitted."""
+        icon = QtGui.QIcon.fromTheme(icon_name)
+        self.tray_icon.setIcon(icon)
+
+    def tray_icon_clicked(self, activation_reason):
+        """Handle clicking the tray icon. See create_context_menu for right-click."""
+        # middle click
+        if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
+            self.start_mixer()
+
+    def create_context_menu(self):
+        """Shows the context menu on right-click and display a quit button."""
+        self.context_menu = QtWidgets.QMenu()
+        self.quit_button = QtGui.QAction("Quit")
+        self.quit_button.triggered.connect(self.quit_button_pressed)
+        self.context_menu.addAction(self.quit_button)
+        self.tray_icon.setContextMenu(self.context_menu)
+
+    def quit_button_pressed(self):
+        """Stop the PipeWire monitor thread and exit the GUI."""
+        self.application.quit()
+
+    def on_volume_changed(self, volume, muted):
+        print(volume, muted)
+
 #    def volume_notification(self, volume, muted, icon_name):
 #        """Display the desktop notification."""
 #        percent_volume = linear_to_percent(volume)
 #        self.notifications.show_notification(percent_volume, icon_name)
-#
+
 #    def start_mixer(self):
 #        """Runs the program provided via the --mixer option."""
 #        if shutil.which(self.mixer_application):
@@ -187,7 +197,7 @@ class PipewireInterface():
 #            message = ("Mixer application '{}' not found. Make sure it's "
 #                       "executable and found in your $PATH")
 #            print(message.format(self.mixer_application))
-#
+
 #class Notification:
 #    """Simple Freedesktop desktop notification implementation via dbus."""
 #    def __init__(self):
@@ -216,8 +226,7 @@ class PipewireInterface():
 
 def run():
     #options = get_options()
-    #app = Wolumeicon(options.mixer)
-    PipewireInterface()
+    app = Wolumeicon("test")
 
 if __name__ == "__main__":
     run()
