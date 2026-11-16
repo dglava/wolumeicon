@@ -17,7 +17,6 @@
 
 from PyQt6 import QtWidgets
 from PyQt6 import QtGui
-from PyQt6 import QtCore
 import dbus
 import subprocess
 import argparse
@@ -27,7 +26,6 @@ import gi
 
 gi.require_version("Wp", "0.5")
 from gi.repository import Wp
-from gi.repository import GLib
 
 # the current wireplumber master has a commit which renames and modifies
 # module-default-nodes-api, which will require some fixes
@@ -139,14 +137,14 @@ class Wolumeicon:
         self.application = QtWidgets.QApplication([])
         self.mixer_application = mixer_application
 
-        self.pipewire = PipewireInterface(self.on_volume_changed)
-        self.pipewire.start()
-
         # placeholder icon name
         self.icon_name = "audio-volume-high"
         self.create_tray_icon()
         self.create_context_menu()
         self.notifications = Notification()
+
+        self.pipewire = PipewireInterface(self.on_volume_changed)
+        self.pipewire.start()
 
         self.application.exec()
 
