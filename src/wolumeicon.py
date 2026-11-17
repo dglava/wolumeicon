@@ -38,6 +38,7 @@ if wp_version != required_wp_version:
     sys.exit(error_msg)
 
 def get_options():
+    """Parses and returns the command-line arguments."""
     description_string = "Displays a volume tray icon"
     parser = argparse.ArgumentParser(description=description_string)
     parser.add_argument(
@@ -51,12 +52,26 @@ def get_options():
 
 
 class PipewireInterface():
+    """Provides an interface to PipeWire via WirePlumber.
+
+    Loads the required WirePlumber modules/plugins and monitors the default
+    audio sink for volume and mute changes.
+    """
     MODULES = [
         ("libwireplumber-module-default-nodes-api", "default-nodes-api"),
         ("libwireplumber-module-mixer-api", "mixer-api"),
     ]
 
     def __init__(self, on_volume_changed_callback):
+        """Initializes the Wireplumber connection.
+
+        The relevant data Pipewire provides are the default
+        audio sink (device outputting audio), its volume and muted status.
+
+        It binds the passed function name to the callback, enabling
+        a connection the the GUI. This way the usage of custom Qt signals
+        can be avoided.
+        """
         Wp.init(Wp.InitFlags.PIPEWIRE | Wp.InitFlags.SPA_TYPES)
 
         self.core = Wp.Core.new(None, None, None)
@@ -67,24 +82,46 @@ class PipewireInterface():
         self.on_volume_changed_callback = on_volume_changed_callback
 
     def start(self):
+        """Starts the connection process."""
         self.core.connect_after("connected", self.on_connected)
         self.core.connect()
 
     def on_connected(self, *_):
+        """Starts loading the modules once connected to Wireplumber."""
         self.load_modules()
 
     def load_modules(self):
+        """Loads the required modules.
+
+        According to the AI Wp explanation, the loading is asynchronous.
+        The on_loaded() handler runs once the loading actually finishes.
+        The pending_loading is a counter which keeps track of the number
+        of modules to be loaded.
+        """
         self.pending_loading = len(self.MODULES)
         for module, provides in self.MODULES:
             self.core.load_component(module, "module", None, provides, None, self.on_loaded)
 
     def on_loaded(self, core, result, *_):
+        """Handles the loading of a module.
+
+        When a module is finished loading, it decreases the pending_loading
+        counter. When it reaches 0, it means that all modules have finished
+        loading and the module's plugin activation can begin.
+        """
         core.load_component_finish(result)
         self.pending_loading -= 1
         if self.pending_loading == 0:
             self.activate_plugins()
 
     def activate_plugins(self):
+        """Activates the required plugins.
+
+        As with the modules, the activation is also asynchronous.
+        The on_activated() handler runs once the activation actually finishes.
+        The pending_activation is a counter which keeps track of the number
+        of plugins to be activated.
+        """
         self.pending_activation = len(self.MODULES)
         for _module, name in self.MODULES:
             plugin = Wp.Plugin.find(self.core, name)
@@ -92,6 +129,12 @@ class PipewireInterface():
             plugin.activate(Wp.PluginFeatures.ENABLED, None, self.on_activated)
 
     def on_activated(self, plugin, result, *_):
+        """Handles the activation of a plugin.
+
+        As in on_loaded(), it uses a counter to track if all plugins
+        have been activated. Once they are, it connects the appropriate
+        Signals and gets the initial sink ID and volume/muted states.
+        """
         plugin.activate_finish(result)
         self.pending_activation -= 1
         if self.pending_activation == 0:
@@ -99,49 +142,62 @@ class PipewireInterface():
             self.update_sink_id()
             self.update_volume_and_muted()
 
-    def update_sink_id(self):
-        self.sink_id = self.plugins["default-nodes-api"].emit("get-default-node", "Audio/Sink")
-
     def connect_signals(self):
+        """Connects the "changed" signals of the plugins to the handlers."""
+        # the default volume scale is linear, this changes it to cubic
         self.plugins["mixer-api"].set_property("scale", 1)
         self.plugins["mixer-api"].connect("changed", self.on_mixer_api_changed)
         self.plugins["default-nodes-api"].connect("changed", self.on_default_nodes_api_changed)
 
     def on_mixer_api_changed(self, plugin, node_id):
+        """Signal handler which gets called whenever any mixer properties change."""
+        # react only to changes regarding our sink
         if node_id == self.sink_id:
             self.update_volume_and_muted()
 
     def on_default_nodes_api_changed(self, plugin):
+        """Signal handler which gets called whenever metadata properties change."""
         self.update_sink_id()
         self.update_volume_and_muted()
 
+    def update_sink_id(self):
+        """Updates the currently default audio sink we are interested in."""
+        self.sink_id = self.plugins["default-nodes-api"].emit("get-default-node", "Audio/Sink")
+
     def update_volume_and_muted(self):
+        """Retrieves the current sink volume and mute state.
+
+        Updates the cached values and notifies the registered callback.
+        """
+        # when wolumeicon is started early, sometimes Wireplumber isn't
+        # done setting everything up, so the sink_id isn't available yet
         if not self.sink_id:
             return
-
         volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
+
+        # same as above for sink_id
         if not volume_data:
             return
-
         unpacked_volume_data = volume_data.unpack()
         self.volume = unpacked_volume_data["volume"]
         self.muted = unpacked_volume_data["mute"]
+        # this gets bound to Wolumeicon.on_volume_changed()
         self.on_volume_changed_callback(self.volume, self.muted)
 
 class Wolumeicon:
-    """Displays a tray icon which provides useful functions.
+    """Provides a system tray icon for displaying audio volume.
 
-    Middle clicking starts an optional mixer application.
-    Right clicking displays a quit button.
+    Middle-clicking opens the configured mixer application.
+    Right-clicking opens a context menu with a quit action.
     """
     application_name = "Wolumeicon"
 
     def __init__(self, mixer_application):
-        """Creates the PipeWire interface and sets up UI elements."""
+        """Creates the Pipewire interface and sets up UI elements."""
         self.application = QtWidgets.QApplication([])
         self.mixer_application = mixer_application
 
-        # placeholder icon name
+        # icon that gets displayed until actual PipeWire data is available
         self.icon_name = "audio-volume-high"
         self.create_tray_icon()
         self.create_context_menu()
@@ -160,13 +216,17 @@ class Wolumeicon:
         self.tray_icon.show()
 
     def update_tray_icon(self, volume, muted):
-        """Updates the icon every time the changed() signal is emitted."""
+        """Updates the tray icon.
+
+        It gets called in on_volume_change(), which is the callback
+        passed to the Pipewire interface, which gets called every
+        time mixer-api or default-nodes-api notifies of changes."""
         self.icon_name = self.get_icon(volume, muted)
         icon = QtGui.QIcon.fromTheme(self.icon_name)
         self.tray_icon.setIcon(icon)
 
     def get_icon(self, volume, muted):
-        """Gets the appropriate icon for the volume level."""
+        """Gets the appropriate icon name for the volume level."""
         if muted:
             return "audio-volume-muted"
         elif volume > 0.74:
@@ -179,13 +239,13 @@ class Wolumeicon:
             return "audio-volume-muted"
 
     def tray_icon_clicked(self, activation_reason):
-        """Handle clicking the tray icon. See create_context_menu for right-click."""
+        """Handle clicking the tray icon. See create_context_menu() for right-click."""
         # middle click
         if activation_reason == QtWidgets.QSystemTrayIcon.ActivationReason.MiddleClick:
             self.start_mixer()
 
     def create_context_menu(self):
-        """Shows the context menu on right-click and display a quit button."""
+        """Creates a context menu holding the quit button."""
         self.context_menu = QtWidgets.QMenu()
         self.quit_button = QtGui.QAction("Quit")
         self.quit_button.triggered.connect(self.quit_button_pressed)
@@ -193,10 +253,11 @@ class Wolumeicon:
         self.tray_icon.setContextMenu(self.context_menu)
 
     def quit_button_pressed(self):
-        """Stop the PipeWire monitor thread and exit the GUI."""
+        """Stops the application."""
         self.application.quit()
 
     def on_volume_changed(self, volume, muted):
+        """Updates the tray icon and displays a volume notification."""
         self.update_tray_icon(volume, muted)
         self.notifications.show_notification(volume, self.icon_name)
 
@@ -210,7 +271,7 @@ class Wolumeicon:
             print(message.format(self.mixer_application))
 
 class Notification:
-    """Simple Freedesktop desktop notification implementation via dbus."""
+    """Simple Freedesktop desktop notification implementation via D-Bus."""
     def __init__(self):
         session_bus = dbus.SessionBus()
         notify_obj = session_bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
