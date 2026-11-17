@@ -112,14 +112,18 @@ class PipewireInterface():
             self.update_volume_and_muted()
 
     def on_default_nodes_api_changed(self, plugin):
-        pass
-#        self.update_sink_id()
-#        self.update_volume_and_muted()
+        self.update_sink_id()
+        self.update_volume_and_muted()
 
     def update_volume_and_muted(self):
-        volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
-        unpacked_volume_data = volume_data.unpack()
+        if not self.sink_id:
+            return
 
+        volume_data = self.plugins["mixer-api"].emit("get-volume", self.sink_id)
+        if not volume_data:
+            return
+
+        unpacked_volume_data = volume_data.unpack()
         self.volume = unpacked_volume_data["volume"]
         self.muted = unpacked_volume_data["mute"]
         self.on_volume_changed_callback(self.volume, self.muted)
